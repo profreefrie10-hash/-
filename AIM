@@ -1,534 +1,471 @@
--- ============================================
--- AIMLOCK + FOV CIRCLE (GUI เท่านั้น)
--- ใช้ได้ทุก Executor รวม Delta Mobile
--- ============================================
+--// MAHI Full | ESP + Aimbot + UI + Mobile Patch
+--// Delta Mobile Ready | Toggle: ปุ่ม MENU / RightShift
 
-local Players           = game:GetService("Players")
-local RunService        = game:GetService("RunService")
-local UserInputService  = game:GetService("UserInputService")
-local Workspace         = game:GetService("Workspace")
-local TweenService      = game:GetService("TweenService")
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService     = game:GetService("TweenService")
+local Workspace        = game:GetService("Workspace")
+local Camera           = Workspace.CurrentCamera
+local LocalPlayer      = Players.LocalPlayer
 
-local LocalPlayer = Players.LocalPlayer
-local Camera      = Workspace.CurrentCamera
-local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
+--============================================================
+-- CONFIG
+--============================================================
+local HEADER_IMAGE = "rbxassetid://0"  -- ← ใส่ asset id รูปที่อัปโหลดแล้ว
 
--- ====== CONFIG ======
-local CONFIG = {
-    Enabled      = true,
-    FOV          = 360,
-    MAX_DISTANCE = 99999,
-    TEAM_CHECK   = false,
-    SILENT_AIM   = true,   -- true = ไม่หมุนกล้อง
-    SMOOTHNESS   = 0.3,
-    CIRCLE_SIZE  = 80,
-    CIRCLE_COLOR = Color3.fromRGB(255, 60, 60),
-    CIRCLE_THICK = 3,
+local C = {
+    Bg      = Color3.fromRGB(240, 245, 255),
+    Panel   = Color3.fromRGB(250, 252, 255),
+    Stroke  = Color3.fromRGB(180, 200, 225),
+    Accent  = Color3.fromRGB( 91, 155, 213),
+    Accent2 = Color3.fromRGB(168, 200, 232),
+    Text    = Color3.fromRGB( 42,  58,  74),
+    TextSub = Color3.fromRGB(120, 140, 160),
+    On      = Color3.fromRGB( 80, 200, 140),
+    Off     = Color3.fromRGB(200, 210, 220),
+    Shadow  = Color3.fromRGB( 60,  80, 110),
+    BotCol  = Color3.fromRGB(255,  80,  80),
+    PlyCol  = Color3.fromRGB( 80, 255, 120),
+    TrcCol  = Color3.fromRGB(255, 255,   0),
 }
 
--- ====== ปุ่มล็อค ======
-local LOCK_KEYS = {}
-for _, kc in ipairs(Enum.KeyCode:GetEnumItems()) do
-    LOCK_KEYS[kc] = true
-end
-LOCK_KEYS[Enum.UserInputType.MouseButton1] = true
-LOCK_KEYS[Enum.UserInputType.Touch] = true
+local State = {
+    ESP_Enabled    = true,
+    ESP_Filter     = "Both",
+    ESP_Box        = true,
+    ESP_Name       = true,
+    ESP_Distance   = true,
+    ESP_Health     = true,
+    ESP_HeadDot    = true,
 
--- ============================================
--- 🔧 หา Part หลัก
--- ============================================
-local function getTargetPart(character)
-    if not character then return nil end
-    return character:FindFirstChild("HumanoidRootPart")
-        or character:FindFirstChild("UpperTorso")
-        or character:FindFirstChild("Torso")
-        or character:FindFirstChild("Head")
-        or character.PrimaryPart
-end
+    Aimbot_Enabled = true,
+    Aimbot_Filter  = "Both",
+    Aimbot_FOV     = 120,
+    Aimbot_Smooth  = 0.18,
+    Aimbot_Part    = "Head",
+    Aimbot_Visible = false,
+}
 
--- ============================================
--- 🎨 ScreenGui หลัก
--- ============================================
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "AimlockSystem"
-screenGui.IgnoreGuiInset = true
-screenGui.ResetOnSpawn = false
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.DisplayOrder = 999
-screenGui.Parent = PlayerGui
+_G.MAHI_AIM_HOLD = false
 
--- ============================================
--- 🎯 FOV Circle (ใช้ Frame กลม)
--- ============================================
-local fovCircle = Instance.new("Frame")
-fovCircle.Name = "FOVCircle"
-fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
-fovCircle.Position = UDim2.fromScale(0.5, 0.5)
-fovCircle.Size = UDim2.fromOffset(400, 400)  -- จะอัปเดตตาม FOV
-fovCircle.BackgroundTransparency = 1
-fovCircle.Visible = true
-fovCircle.ZIndex = 5
-fovCircle.Parent = screenGui
+--============================================================
+-- HELPERS
+--============================================================
+local function new(c, p) local o = Instance.new(c) for k,v in pairs(p or {}) do o[k]=v end return o end
+local function corner(p, r) return new("UICorner", {CornerRadius=UDim.new(0,r or 8), Parent=p}) end
+local function stroke(p, col, th, tr) return new("UIStroke", {Color=col or C.Stroke, Thickness=th or 1, Transparency=tr or 0.4, ApplyStrokeMode=Enum.ApplyStrokeMode.Border, Parent=p}) end
+local function gradient(p, c1, c2, rot) return new("UIGradient", {Color=ColorSequence.new(c1,c2), Rotation=rot or 90, Parent=p}) end
+local function padding(p, a) return new("UIPadding", {PaddingTop=UDim.new(0,a),PaddingBottom=UDim.new(0,a),PaddingLeft=UDim.new(0,a),PaddingRight=UDim.new(0,a),Parent=p}) end
+local function tween(o, t, p) TweenService:Create(o, TweenInfo.new(t, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), p):Play() end
 
-local fovCorner = Instance.new("UICorner")
-fovCorner.CornerRadius = UDim.new(1, 0)
-fovCorner.Parent = fovCircle
+--============================================================
+-- ROOT
+--============================================================
+local gui = new("ScreenGui", {
+    Name = "MAHI_UI",
+    ResetOnSpawn = false,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    IgnoreGuiInset = true,
+    Parent = (gethui and gethui()) or LocalPlayer:WaitForChild("PlayerGui"),
+})
 
-local fovStroke = Instance.new("UIStroke")
-fovStroke.Thickness = 2
-fovStroke.Color = Color3.fromRGB(255, 60, 60)
-fovStroke.Transparency = 0.4
-fovStroke.Parent = fovCircle
+local main = new("Frame", {
+    Size = UDim2.new(0, 540, 0, 360),
+    Position = UDim2.new(0.5, -270, 0.5, -180),
+    BackgroundColor3 = C.Bg,
+    BorderSizePixel = 0,
+    Parent = gui,
+})
+corner(main, 14)
+stroke(main, C.Stroke, 1, 0.3)
+gradient(main, C.Bg, C.Panel, 135)
 
--- ============================================
--- 🎯 วงล็อคเป้า (ตามตัวศัตรู)
--- ============================================
-local lockCircle = Instance.new("Frame")
-lockCircle.Name = "LockCircle"
-lockCircle.AnchorPoint = Vector2.new(0.5, 0.5)
-lockCircle.Size = UDim2.fromOffset(80, 80)
-lockCircle.BackgroundTransparency = 1
-lockCircle.Visible = false
-lockCircle.ZIndex = 10
-lockCircle.Parent = screenGui
+--============================================================
+-- HEADER
+--============================================================
+local header = new("Frame", {
+    Size = UDim2.new(1, 0, 0, 84),
+    BackgroundColor3 = C.Panel,
+    BackgroundTransparency = 0.15,
+    BorderSizePixel = 0,
+    Parent = main,
+})
+corner(header, 14)
+new("Frame", {Size=UDim2.new(1,0,0,14), Position=UDim2.new(0,0,1,-14), BackgroundColor3=C.Panel, BackgroundTransparency=0.15, BorderSizePixel=0, Parent=header})
 
-local lockCorner = Instance.new("UICorner")
-lockCorner.CornerRadius = UDim.new(1, 0)
-lockCorner.Parent = lockCircle
+local avatar = new("ImageLabel", {
+    Size = UDim2.new(0, 60, 0, 60),
+    Position = UDim2.new(0, 16, 0.5, -30),
+    BackgroundColor3 = C.Accent2,
+    BackgroundTransparency = 0.2,
+    Image = HEADER_IMAGE,
+    ScaleType = Enum.ScaleType.Crop,
+    BorderSizePixel = 0,
+    Parent = header,
+})
+corner(avatar, 30)
+stroke(avatar, C.Accent, 1.5, 0.2)
 
-local lockStroke = Instance.new("UIStroke")
-lockStroke.Thickness = CONFIG.CIRCLE_THICK
-lockStroke.Color = CONFIG.CIRCLE_COLOR
-lockStroke.Transparency = 0.1
-lockStroke.Parent = lockCircle
+new("TextLabel", {Size=UDim2.new(0,220,0,26), Position=UDim2.new(0,90,0,20), BackgroundTransparency=1, Font=Enum.Font.GothamBold, Text="MAHI", TextColor3=C.Text, TextSize=22, TextXAlignment=Enum.TextXAlignment.Left, Parent=header})
+new("TextLabel", {Size=UDim2.new(0,260,0,18), Position=UDim2.new(0,90,0,46), BackgroundTransparency=1, Font=Enum.Font.Gotham, Text="one tap is enough.", TextColor3=C.TextSub, TextSize=13, TextXAlignment=Enum.TextXAlignment.Left, Parent=header})
 
--- ============================================
--- 🎯 จุดกลางวงล็อค
--- ============================================
-local lockDot = Instance.new("Frame")
-lockDot.AnchorPoint = Vector2.new(0.5, 0.5)
-lockDot.Position = UDim2.fromScale(0.5, 0.5)
-lockDot.Size = UDim2.fromOffset(8, 8)
-lockDot.BackgroundColor3 = CONFIG.CIRCLE_COLOR
-lockDot.BorderSizePixel = 0
-lockDot.Visible = false
-lockDot.ZIndex = 11
-lockDot.Parent = lockCircle
+local closeBtn = new("TextButton", {
+    Size = UDim2.new(0, 28, 0, 28),
+    Position = UDim2.new(1, -40, 0, 12),
+    BackgroundColor3 = C.Bg,
+    BackgroundTransparency = 0.3,
+    Font = Enum.Font.GothamBold,
+    Text = "×",
+    TextColor3 = C.TextSub,
+    TextSize = 18,
+    BorderSizePixel = 0,
+    Parent = header,
+})
+corner(closeBtn, 8)
+stroke(closeBtn, C.Stroke, 1, 0.4)
+closeBtn.MouseButton1Click:Connect(function() gui.Enabled = false end)
 
-local dotCorner = Instance.new("UICorner")
-dotCorner.CornerRadius = UDim.new(1, 0)
-dotCorner.Parent = lockDot
+--============================================================
+-- SIDEBAR
+--============================================================
+local sidebar = new("Frame", {Size=UDim2.new(0,120,1,-100), Position=UDim2.new(0,14,0,94), BackgroundTransparency=1, Parent=main})
 
--- ============================================
--- 🖥️ UI เมนู
--- ============================================
-local toggleBtn = Instance.new("TextButton")
-toggleBtn.Size = UDim2.fromOffset(55, 55)
-toggleBtn.Position = UDim2.new(0, 20, 0.4, 0)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
-toggleBtn.BorderSizePixel = 0
-toggleBtn.Text = "🎯"
-toggleBtn.TextSize = 28
-toggleBtn.AutoButtonColor = false
-toggleBtn.Draggable = true
-toggleBtn.ZIndex = 100
-toggleBtn.Parent = screenGui
-Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(1, 0)
-local tstroke = Instance.new("UIStroke", toggleBtn)
-tstroke.Thickness = 2
-tstroke.Color = Color3.fromRGB(255, 60, 60)
+local tabs = {"ESP", "Aimbot"}
+local tabButtons = {}
+local pages = {}
 
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.fromOffset(260, 400)
-mainFrame.Position = UDim2.new(0, 90, 0.3, 0)
-mainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 26)
-mainFrame.BorderSizePixel = 0
-mainFrame.Visible = false
-mainFrame.Active = true
-mainFrame.Draggable = true
-mainFrame.ZIndex = 100
-mainFrame.Parent = screenGui
-Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 14)
-local mstroke = Instance.new("UIStroke", mainFrame)
-mstroke.Thickness = 1.5
-mstroke.Color = Color3.fromRGB(255, 60, 60)
-mstroke.Transparency = 0.4
+local content = new("Frame", {Size=UDim2.new(1,-150,1,-100), Position=UDim2.new(0,142,0,94), BackgroundTransparency=1, Parent=main})
 
-local header = Instance.new("TextLabel")
-header.Size = UDim2.new(1, 0, 0, 40)
-header.BackgroundTransparency = 1
-header.Text = "🎯 AIMLOCK"
-header.TextColor3 = Color3.fromRGB(255, 255, 255)
-header.TextSize = 18
-header.Font = Enum.Font.GothamBold
-header.ZIndex = 101
-header.Parent = mainFrame
-
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.fromOffset(28, 28)
-closeBtn.Position = UDim2.new(1, -36, 0, 6)
-closeBtn.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
-closeBtn.BorderSizePixel = 0
-closeBtn.Text = "✕"
-closeBtn.TextSize = 14
-closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-closeBtn.Font = Enum.Font.GothamBold
-closeBtn.ZIndex = 101
-closeBtn.Parent = mainFrame
-Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(1, 0)
-
-local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1, 0, 1, -45)
-scroll.Position = UDim2.new(0, 0, 0, 45)
-scroll.BackgroundTransparency = 1
-scroll.BorderSizePixel = 0
-scroll.ScrollBarThickness = 4
-scroll.ScrollBarImageColor3 = Color3.fromRGB(255, 60, 60)
-scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-scroll.ZIndex = 100
-scroll.Parent = mainFrame
-
-local listLayout = Instance.new("UIListLayout", scroll)
-listLayout.Padding = UDim.new(0, 8)
-listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
-local listPad = Instance.new("UIPadding", scroll)
-listPad.PaddingTop = UDim.new(0, 10)
-listPad.PaddingLeft = UDim.new(0, 15)
-listPad.PaddingRight = UDim.new(0, 15)
-listPad.PaddingBottom = UDim.new(0, 10)
-
--- ====== UI Helpers ======
-local function createSection(text)
-    local f = Instance.new("Frame")
-    f.Size = UDim2.new(1, 0, 0, 22)
-    f.BackgroundTransparency = 1
-    f.Parent = scroll
-    local l = Instance.new("TextLabel")
-    l.Size = UDim2.new(1, 0, 1, 0)
-    l.BackgroundTransparency = 1
-    l.Text = "▸ " .. text
-    l.TextColor3 = Color3.fromRGB(255, 60, 60)
-    l.TextSize = 12
-    l.Font = Enum.Font.GothamBold
-    l.TextXAlignment = Enum.TextXAlignment.Left
-    l.Parent = f
+for _, name in ipairs(tabs) do
+    local page = new("ScrollingFrame", {
+        Size = UDim2.new(1,0,1,0),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ScrollBarThickness = 2,
+        ScrollBarImageColor3 = C.Accent2,
+        CanvasSize = UDim2.new(0,0,0,0),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        Visible = false,
+        Parent = content,
+    })
+    padding(page, 4)
+    new("UIListLayout", {Padding=UDim.new(0,8), SortOrder=Enum.SortOrder.LayoutOrder, Parent=page})
+    pages[name] = page
 end
 
-local function createToggle(name, default, callback)
-    local f = Instance.new("Frame")
-    f.Size = UDim2.new(1, 0, 0, 32)
-    f.BackgroundTransparency = 1
-    f.Parent = scroll
-    local l = Instance.new("TextLabel")
-    l.Size = UDim2.new(0.7, 0, 1, 0)
-    l.BackgroundTransparency = 1
-    l.Text = name
-    l.TextColor3 = Color3.fromRGB(220, 220, 230)
-    l.TextSize = 13
-    l.Font = Enum.Font.Gotham
-    l.TextXAlignment = Enum.TextXAlignment.Left
-    l.Parent = f
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.fromOffset(45, 24)
-    b.Position = UDim2.new(1, -45, 0.5, -12)
-    b.BackgroundColor3 = default and Color3.fromRGB(0, 200, 100) or Color3.fromRGB(60, 60, 70)
-    b.BorderSizePixel = 0
-    b.Text = default and "ON" or "OFF"
-    b.TextColor3 = Color3.fromRGB(255, 255, 255)
-    b.TextSize = 11
-    b.Font = Enum.Font.GothamBold
-    b.Parent = f
-    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
-    local state = default
-    b.MouseButton1Click:Connect(function()
-        state = not state
-        b.Text = state and "ON" or "OFF"
-        TweenService:Create(b, TweenInfo.new(0.2), {
-            BackgroundColor3 = state and Color3.fromRGB(0, 200, 100) or Color3.fromRGB(60, 60, 70)
-        }):Play()
-        if callback then callback(state) end
+local function selectTab(name)
+    for n, b in pairs(tabButtons) do
+        local on = (n == name)
+        tween(b, 0.2, {BackgroundTransparency = on and 0 or 0.7, BackgroundColor3 = on and C.Accent or C.Panel})
+        b.TextColor3 = on and Color3.new(1,1,1) or C.TextSub
+    end
+    for n, p in pairs(pages) do p.Visible = (n == name) end
+end
+
+for i, name in ipairs(tabs) do
+    local btn = new("TextButton", {
+        Size = UDim2.new(1,0,0,32),
+        Position = UDim2.new(0,0,0,(i-1)*40),
+        BackgroundColor3 = C.Panel,
+        BackgroundTransparency = 0.7,
+        Font = Enum.Font.GothamMedium,
+        Text = "  "..name,
+        TextColor3 = C.TextSub,
+        TextSize = 13,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        BorderSizePixel = 0,
+        Parent = sidebar,
+    })
+    corner(btn, 8)
+    stroke(btn, C.Stroke, 1, 0.6)
+    tabButtons[name] = btn
+    btn.MouseButton1Click:Connect(function() selectTab(name) end)
+end
+
+--============================================================
+-- WIDGETS
+--============================================================
+local function section(parent, text)
+    return new("TextLabel", {Size=UDim2.new(1,0,0,18), BackgroundTransparency=1, Font=Enum.Font.GothamBold, Text=text, TextColor3=C.Accent, TextSize=11, TextXAlignment=Enum.TextXAlignment.Left, Parent=parent})
+end
+
+local function card(parent, h)
+    local f = new("Frame", {Size=UDim2.new(1,0,0,h), BackgroundColor3=C.Panel, BackgroundTransparency=0.15, BorderSizePixel=0, Parent=parent})
+    corner(f, 10)
+    stroke(f, C.Stroke, 1, 0.5)
+    return f
+end
+
+local function makeToggle(parent, label, key)
+    local row = card(parent, 36)
+    new("TextLabel", {Size=UDim2.new(1,-70,1,0), Position=UDim2.new(0,12,0,0), BackgroundTransparency=1, Font=Enum.Font.GothamMedium, Text=label, TextColor3=C.Text, TextSize=13, TextXAlignment=Enum.TextXAlignment.Left, Parent=row})
+
+    local sw = new("Frame", {Size=UDim2.new(0,40,0,20), Position=UDim2.new(1,-52,0.5,-10), BackgroundColor3=State[key] and C.On or C.Off, BorderSizePixel=0, Parent=row})
+    corner(sw, 10)
+    stroke(sw, C.Stroke, 1, 0.5)
+
+    local knob = new("Frame", {Size=UDim2.new(0,16,0,16), Position=State[key] and UDim2.new(0,22,0,2) or UDim2.new(0,2,0,2), BackgroundColor3=Color3.new(1,1,1), BorderSizePixel=0, Parent=sw})
+    corner(knob, 8)
+
+    new("TextButton", {Size=UDim2.new(1,0,1,0), BackgroundTransparency=1, Text="", Parent=sw}).MouseButton1Click:Connect(function()
+        State[key] = not State[key]
+        tween(sw, 0.2, {BackgroundColor3 = State[key] and C.On or C.Off})
+        tween(knob, 0.2, {Position = State[key] and UDim2.new(0,22,0,2) or UDim2.new(0,2,0,2)})
     end)
 end
 
-local function createSlider(name, min, max, default, callback)
-    local f = Instance.new("Frame")
-    f.Size = UDim2.new(1, 0, 0, 45)
-    f.BackgroundTransparency = 1
-    f.Parent = scroll
-    local l = Instance.new("TextLabel")
-    l.Size = UDim2.new(0.7, 0, 0, 18)
-    l.BackgroundTransparency = 1
-    l.Text = name
-    l.TextColor3 = Color3.fromRGB(220, 220, 230)
-    l.TextSize = 13
-    l.Font = Enum.Font.Gotham
-    l.TextXAlignment = Enum.TextXAlignment.Left
-    l.Parent = f
-    local vl = Instance.new("TextLabel")
-    vl.Size = UDim2.new(0.3, 0, 0, 18)
-    vl.Position = UDim2.new(0.7, 0, 0, 0)
-    vl.BackgroundTransparency = 1
-    vl.Text = tostring(math.floor(default))
-    vl.TextColor3 = Color3.fromRGB(255, 60, 60)
-    vl.TextSize = 13
-    vl.Font = Enum.Font.GothamBold
-    vl.TextXAlignment = Enum.TextXAlignment.Right
-    vl.Parent = f
-    local bar = Instance.new("Frame")
-    bar.Size = UDim2.new(1, 0, 0, 8)
-    bar.Position = UDim2.new(0, 0, 0, 26)
-    bar.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
-    bar.BorderSizePixel = 0
-    bar.Parent = f
-    Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
-    local fill = Instance.new("Frame")
-    fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
-    fill.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
-    fill.BorderSizePixel = 0
-    fill.Parent = bar
-    Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
-    local knob = Instance.new("Frame")
-    knob.Size = UDim2.fromOffset(16, 16)
-    knob.Position = UDim2.new(fill.Size.X.Scale, -8, 0.5, -8)
-    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    knob.BorderSizePixel = 0
-    knob.Parent = bar
-    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+local function makeSlider(parent, label, key, minV, maxV, default)
+    local row = card(parent, 46)
+    new("TextLabel", {Size=UDim2.new(1,-90,0,20), Position=UDim2.new(0,12,0,4), BackgroundTransparency=1, Font=Enum.Font.GothamMedium, Text=label, TextColor3=C.Text, TextSize=13, TextXAlignment=Enum.TextXAlignment.Left, Parent=row})
+    local valLbl = new("TextLabel", {Size=UDim2.new(0,70,0,20), Position=UDim2.new(1,-82,0,4), BackgroundTransparency=1, Font=Enum.Font.GothamBold, Text=tostring(default), TextColor3=C.Accent, TextSize=13, TextXAlignment=Enum.TextXAlignment.Right, Parent=row})
+
+    local track = new("Frame", {Size=UDim2.new(1,-24,0,6), Position=UDim2.new(0,12,0,32), BackgroundColor3=C.Off, BorderSizePixel=0, Parent=row})
+    corner(track, 3)
+
+    local pct = (default-minV)/(maxV-minV)
+    local fill = new("Frame", {Size=UDim2.new(pct,0,1,0), BackgroundColor3=C.Accent, BorderSizePixel=0, Parent=track})
+    corner(fill, 3)
+
+    local handle = new("Frame", {Size=UDim2.new(0,14,0,14), Position=UDim2.new(pct,-7,0.5,-7), BackgroundColor3=Color3.new(1,1,1), BorderSizePixel=0, Parent=track})
+    corner(handle, 7)
+    stroke(handle, C.Accent, 1.5, 0)
+
     local dragging = false
-    local function update(x)
-        local relX = math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
-        local val = min + (max - min) * relX
-        fill.Size = UDim2.new(relX, 0, 1, 0)
-        knob.Position = UDim2.new(relX, -8, 0.5, -8)
-        vl.Text = tostring(math.floor(val))
-        if callback then callback(val) end
+    local btn = new("TextButton", {Size=UDim2.new(1,0,3,0), Position=UDim2.new(0,0,-1,0), BackgroundTransparency=1, Text="", Parent=track})
+
+    local function setFromX(x)
+        local rel = math.clamp((x - track.AbsolutePosition.X)/track.AbsoluteSize.X, 0, 1)
+        local v = minV + (maxV-minV)*rel
+        fill.Size = UDim2.new(rel,0,1,0)
+        handle.Position = UDim2.new(rel,-7,0.5,-7)
+        valLbl.Text = tostring(math.floor(v*100)/100)
+        State[key] = v
     end
-    bar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 
-           or input.UserInputType == Enum.UserInputType.Touch then
+
+    btn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
-            update(input.Position.X)
+            setFromX(input.Position.X)
         end
     end)
     UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement 
-           or input.UserInputType == Enum.UserInputType.Touch) then
-            update(input.Position.X)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            setFromX(input.Position.X)
         end
     end)
     UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 
-           or input.UserInputType == Enum.UserInputType.Touch then
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = false
         end
     end)
 end
 
--- ====== เมนู ======
-createSection("MAIN")
-createToggle("เปิดใช้งาน", CONFIG.Enabled, function(v) CONFIG.Enabled = v end)
-createToggle("แสดง FOV วงกลางจอ", true, function(v) fovCircle.Visible = v end)
-createToggle("Silent Aim (ไม่หมุนกล้อง)", CONFIG.SILENT_AIM, function(v) CONFIG.SILENT_AIM = v end)
-createToggle("เช็คทีม", CONFIG.TEAM_CHECK, function(v) CONFIG.TEAM_CHECK = v end)
+local function makeDropdown(parent, label, key, options)
+    local row = card(parent, 36)
+    new("TextLabel", {Size=UDim2.new(0,120,1,0), Position=UDim2.new(0,12,0,0), BackgroundTransparency=1, Font=Enum.Font.GothamMedium, Text=label, TextColor3=C.Text, TextSize=13, TextXAlignment=Enum.TextXAlignment.Left, Parent=row})
 
-createSection("AIM")
-createSlider("FOV (องศา)", 10, 360, CONFIG.FOV, function(v) CONFIG.FOV = v end)
-createSlider("ระยะไกลสุด", 100, 99999, CONFIG.MAX_DISTANCE, function(v) CONFIG.MAX_DISTANCE = v end)
-createSlider("ความนุ่มนวล", 1, 99, CONFIG.SMOOTHNESS * 100, function(v) CONFIG.SMOOTHNESS = v / 100 end)
+    local idx = table.find(options, State[key]) or 1
+    local valBtn = new("TextButton", {Size=UDim2.new(0,120,0,24), Position=UDim2.new(1,-132,0.5,-12), BackgroundColor3=C.Bg, BackgroundTransparency=0.2, Font=Enum.Font.GothamMedium, Text=options[idx], TextColor3=C.Accent, TextSize=12, BorderSizePixel=0, Parent=row})
+    corner(valBtn, 8)
+    stroke(valBtn, C.Accent, 1, 0.3)
 
-createSection("CIRCLE (วงล็อค)")
-createSlider("ขนาดวงล็อค", 20, 300, CONFIG.CIRCLE_SIZE, function(v) 
-    CONFIG.CIRCLE_SIZE = v
-    lockCircle.Size = UDim2.fromOffset(v * 2, v * 2)
-end)
-createSlider("ความหนาวง", 1, 10, CONFIG.CIRCLE_THICK, function(v)
-    CONFIG.CIRCLE_THICK = v
-    lockStroke.Thickness = v
-end)
-
--- ====== เปิด/ปิดเมนู ======
-local menuOpen = false
-local function setMenu(open)
-    menuOpen = open
-    if open then
-        mainFrame.Visible = true
-        mainFrame.Size = UDim2.fromOffset(0, 0)
-        TweenService:Create(mainFrame, TweenInfo.new(0.25, Enum.EasingStyle.Back), {
-            Size = UDim2.fromOffset(260, 400)
-        }):Play()
-    else
-        local tw = TweenService:Create(mainFrame, TweenInfo.new(0.2), {
-            Size = UDim2.fromOffset(0, 0)
-        })
-        tw:Play()
-        tw.Completed:Connect(function()
-            if not menuOpen then mainFrame.Visible = false end
-        end)
-    end
+    valBtn.MouseButton1Click:Connect(function()
+        idx = idx % #options + 1
+        State[key] = options[idx]
+        valBtn.Text = options[idx]
+    end)
 end
 
-toggleBtn.MouseButton1Click:Connect(function() setMenu(not menuOpen) end)
-closeBtn.MouseButton1Click:Connect(function() setMenu(false) end)
+--============================================================
+-- PAGE: ESP
+--============================================================
+local e = pages["ESP"]
+section(e, "VISUALS")
+makeToggle(e, "Enable ESP", "ESP_Enabled")
+makeDropdown(e, "Target", "ESP_Filter", {"Both", "Players", "Bots"})
+section(e, "ELEMENTS")
+makeToggle(e, "Box",      "ESP_Box")
+makeToggle(e, "Name",     "ESP_Name")
+makeToggle(e, "Distance", "ESP_Distance")
+makeToggle(e, "Health",   "ESP_Health")
+makeToggle(e, "Head Dot", "ESP_HeadDot")
 
--- ============================================
--- 🔄 อัปเดต FOV Circle ขนาดตาม FOV
--- ============================================
-local function updateFOVCircle()
-    local vp = Camera.ViewportSize
-    -- คำนวณรัศมีวง FOV เป็น pixel
-    local radius = (vp.Y / 2) * math.tan(math.rad(math.min(CONFIG.FOV, 179) / 2))
-    if CONFIG.FOV >= 180 then
-        radius = vp.Y / 2  -- กว้างสุดจอ
-    end
-    fovCircle.Size = UDim2.fromOffset(radius * 2, radius * 2)
-    fovStroke.Color = CONFIG.CIRCLE_COLOR
+--============================================================
+-- PAGE: AIMBOT
+--============================================================
+local a = pages["Aimbot"]
+section(a, "TARGETING")
+makeToggle(a, "Enable Aimbot", "Aimbot_Enabled")
+makeDropdown(a, "Target", "Aimbot_Filter", {"Both", "Players", "Bots"})
+makeDropdown(a, "Hit Part", "Aimbot_Part", {"Head", "Torso", "Nearest"})
+section(a, "TUNING")
+makeSlider(a, "FOV", "Aimbot_FOV", 20, 400, 120)
+makeSlider(a, "Smooth", "Aimbot_Smooth", 0, 0.5, 0.18)
+makeToggle(a, "Visible Check", "Aimbot_Visible")
+
+selectTab("ESP")
+
+--============================================================
+-- ESP LOGIC
+--============================================================
+local function getHitboxFolder(m)
+    return m:FindFirstChild("Hitbox_Bots") or m:FindFirstChild("Hitbox")
 end
-updateFOVCircle()
-
--- ============================================
--- 🔍 ตรรกะ Aimlock
--- ============================================
-local lockedTarget = nil
-local isLocking = false
-local currentSize = CONFIG.CIRCLE_SIZE
-
-local function isEnemy(plr)
-    if not plr or plr == LocalPlayer then return false end
-    if not plr.Character then return false end
-    if not getTargetPart(plr.Character) then return false end
-    local hum = plr.Character:FindFirstChildOfClass("Humanoid")
-    if not hum or hum.Health <= 0 then return false end
-    if CONFIG.TEAM_CHECK and plr.Team and LocalPlayer.Team
-       and plr.Team == LocalPlayer.Team then
-        return false
-    end
-    return true
+local function isBot(m) return getHitboxFolder(m) ~= nil end
+local function isPlayer(m) return Players:GetPlayerFromCharacter(m) ~= nil end
+local function classify(m)
+    if isPlayer(m) then return "Player" end
+    if isBot(m) then return "Bot" end
+    return nil
+end
+local function passes(kind, filter)
+    if filter == "Both" then return kind ~= nil end
+    return kind == filter
+end
+local function getHealth(m)
+    local h = m:FindFirstChildOfClass("Humanoid")
+    if h then return h.Health, h.MaxHealth end
+    return 100, 100
 end
 
-local function findTarget()
+local espObjects = {}
+
+local function removeESP(m)
+    local d = espObjects[m]
+    if not d then return end
+    for _, o in pairs(d) do if o.Remove then o:Remove() end end
+    espObjects[m] = nil
+end
+
+local function createESP(m)
+    local d = {}
+    if State.ESP_Box then d.box = Drawing.new("Square"); d.box.Thickness=1; d.box.Filled=false end
+    if State.ESP_Name then d.name = Drawing.new("Text"); d.name.Size=14; d.name.Center=true; d.name.Outline=true; d.name.OutlineColor=Color3.new(0,0,0) end
+    if State.ESP_Distance then d.dist = Drawing.new("Text"); d.dist.Size=13; d.dist.Center=true; d.dist.Outline=true; d.dist.OutlineColor=Color3.new(0,0,0) end
+    if State.ESP_Health then
+        d.hbg = Drawing.new("Square"); d.hbg.Filled=true; d.hbg.Color=Color3.fromRGB(20,20,20)
+        d.hbar = Drawing.new("Square"); d.hbar.Filled=true
+    end
+    if State.ESP_HeadDot then d.dot = Drawing.new("Circle"); d.dot.Radius=4; d.dot.Filled=true end
+    espObjects[m] = d
+end
+
+local function setVis(d, v)
+    for _, o in pairs(d) do o.Visible = v end
+end
+
+local function updateESP()
     local camPos = Camera.CFrame.Position
-    local viewport = Camera.ViewportSize
-    local center = Vector2.new(viewport.X / 2, viewport.Y / 2)
-    local best, bestScore = nil, math.huge
-    local fovRadius = math.huge
-    if CONFIG.FOV < 180 then
-        fovRadius = (viewport.Y / 2) * math.tan(math.rad(CONFIG.FOV / 2))
+    for m, d in pairs(espObjects) do
+        local kind = classify(m)
+        if not kind or not m.Parent or not passes(kind, State.ESP_Filter) then
+            setVis(d, false)
+        else
+            local hf = getHitboxFolder(m)
+            local head = hf and hf:FindFirstChild("Hitbox_Head") or m:FindFirstChild("Head")
+            local root = hf and hf:FindFirstChild("Hitbox_Torso") or m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
+            if not head or not root then setVis(d, false) else
+                local hp, hon = Camera:WorldToViewportPoint(head.Position)
+                local rp, ron = Camera:WorldToViewportPoint(root.Position)
+                local dist = (camPos - root.Position).Magnitude
+                if not hon or not ron or dist > 2000 then
+                    setVis(d, false)
+                else
+                    setVis(d, true)
+                    local col = (kind == "Player") and C.PlyCol or C.BotCol
+                    if d.box then
+                        local h = math.abs(hp.Y - rp.Y) * 2.2
+                        local w = h * 0.6
+                        d.box.Size = Vector2.new(w, h)
+                        d.box.Position = Vector2.new(hp.X - w/2, hp.Y - h*0.15)
+                        d.box.Color = col
+                    end
+                    if d.name then d.name.Text = m.Name; d.name.Position = Vector2.new(hp.X, hp.Y - 22); d.name.Color = col end
+                    if d.dist then d.dist.Text = string.format("[%d]", math.floor(dist)); d.dist.Position = Vector2.new(hp.X, hp.Y + 4); d.dist.Color = col end
+                    if d.hbar and d.box then
+                        local h, mh = getHealth(m)
+                        local pct = math.clamp(h/mh, 0, 1)
+                        local bx, by, bh = d.box.Position.X - 6, d.box.Position.Y, d.box.Size.Y
+                        d.hbg.Size = Vector2.new(3, bh); d.hbg.Position = Vector2.new(bx, by)
+                        d.hbar.Size = Vector2.new(3, bh*pct); d.hbar.Position = Vector2.new(bx, by + bh*(1-pct))
+                        d.hbar.Color = Color3.fromRGB(255*(1-pct), 255*pct, 0)
+                    end
+                    if d.dot then d.dot.Position = Vector2.new(hp.X, hp.Y); d.dot.Color = col end
+                end
+            end
+        end
     end
+end
 
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if not isEnemy(plr) then continue end
-        local part = getTargetPart(plr.Character)
-        if not part then continue end
-        local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
-        if onScreen and screenPos.Z > 0 then
-            local dist3D = (part.Position - camPos).Magnitude
-            if dist3D > CONFIG.MAX_DISTANCE then continue end
-            local screenDist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
-            if screenDist <= fovRadius and screenDist < bestScore then
-                bestScore = screenDist
-                best = plr
+task.spawn(function()
+    while task.wait(0.5) do
+        for m in pairs(espObjects) do if not m.Parent then removeESP(m) end end
+        if State.ESP_Enabled then
+            for _, o in ipairs(Workspace:GetChildren()) do
+                if o:IsA("Model") and o ~= LocalPlayer.Character and not espObjects[o] then
+                    local k = classify(o)
+                    if k and passes(k, State.ESP_Filter) then createESP(o) end
+                end
+            end
+        else
+            for m in pairs(espObjects) do removeESP(m) end
+        end
+    end
+end)
+
+--============================================================
+-- AIMBOT LOGIC
+--============================================================
+local function getTargetPart(m)
+    local hf = getHitboxFolder(m)
+    if hf then
+        if State.Aimbot_Part == "Torso" then
+            return hf:FindFirstChild("Hitbox_Torso") or hf:FindFirstChild("Hitbox_Head")
+        else
+            return hf:FindFirstChild("Hitbox_Head") or hf:FindFirstChild("Hitbox_Torso")
+        end
+    end
+    return m:FindFirstChild("Head")
+end
+
+local function getClosest()
+    local camPos = Camera.CFrame.Position
+    local vp = Camera.ViewportSize / 2
+    local best, bestD = nil, State.Aimbot_FOV
+    for m in pairs(espObjects) do
+        if m.Parent then
+            local k = classify(m)
+            if k and passes(k, State.Aimbot_Filter) then
+                local p = getTargetPart(m)
+                if p then
+                    local sp, on = Camera:WorldToViewportPoint(p.Position)
+                    if on then
+                        local d = math.sqrt((sp.X-vp.X)^2 + (sp.Y-vp.Y)^2)
+                        if d < bestD then
+                            local vis = true
+                            if State.Aimbot_Visible then
+                                local rp = RaycastParams.new()
+                                rp.FilterType = Enum.RaycastFilterType.Exclude
+                                rp.FilterDescendantsInstances = {LocalPlayer.Character, m}
+                                vis = Workspace:Raycast(camPos, p.Position - camPos, rp) == nil
+                            end
+                            if vis then best, bestD = p, d end
+                        end
+                    end
+                end
             end
         end
     end
     return best
 end
 
--- ====== ตรวจจับปุ่ม ======
-UserInputService.InputBegan:Connect(function(input, gpe)
-    if gpe then return end
-    if LOCK_KEYS[input.KeyCode] or LOCK_KEYS[input.UserInputType] then
-        isLocking = true
-        lockedTarget = findTarget()
-        print("[Aimlock] ล็อค:", lockedTarget and lockedTarget.Name or "ไม่เจอเป้า")
-    end
-end)
+local fovCircle = Drawing.new("Circle")
+fovCircle.Thickness = 1
+fovCircle.NumSides = 64
+fovCircle.Filled = false
+fovCircle.Transparency = 0.7
 
-UserInputService.InputEnded:Connect(function(input)
-    if LOCK_KEYS[input.KeyCode] or LOCK_KEYS[input.UserInputType] then
-        local stillHeld = false
-        for key, _ in pairs(LOCK_KEYS) do
-            if typeof(key) == "EnumItem" and key.EnumType == Enum.KeyCode then
-                if UserInputService:IsKeyDown(key) then stillHeld = true break end
-            end
-        end
-        if not stillHeld then
-            isLocking = false
-            lockedTarget = nil
-        end
-    end
-end)
-
--- ====== อัปเดตวงล็อคเป้า ======
-local function updateLockCircle(target)
-    if not target then
-        lockCircle.Visible = false
-        lockDot.Visible = false
-        return
-    end
-    local part = getTargetPart(target.Character)
-    if not part then
-        lockCircle.Visible = false
-        lockDot.Visible = false
-        return
-    end
-    local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
-    if not onScreen or screenPos.Z <= 0 then
-        lockCircle.Visible = false
-        lockDot.Visible = false
-        return
-    end
-    lockCircle.Position = UDim2.fromOffset(screenPos.X, screenPos.Y)
-    lockCircle.Size = UDim2.fromOffset(currentSize * 2, currentSize * 2)
-    lockCircle.Visible = true
-    lockDot.Visible = true
-end
-
--- ====== Aim ======
-local function aimAt(target)
-    if not target or CONFIG.SILENT_AIM then return end
-    local part = getTargetPart(target.Character)
-    if not part then return end
-    local camCF = Camera.CFrame
-    local lookAt = CFrame.new(camCF.Position, part.Position)
-    Camera.CFrame = camCF:Lerp(lookAt, 1 - CONFIG.SMOOTHNESS)
-end
-
--- ============================================
--- 🔄 Render Loop
--- ============================================
-RunService.RenderStepped:Connect(function()
-    if not CONFIG.Enabled then
-        lockCircle.Visible = false
-        lockDot.Visible = false
-        return
-    end
-
-    -- อัปเดต FOV circle ตาม viewport
-    updateFOVCircle()
-
-    if isLocking then
-        if not lockedTarget or not lockedTarget.Character 
-           or not isEnemy(lockedTarget) then
-            lockedTarget = findTarget()
-        end
-        if lockedTarget then 
-            aimAt(lockedTarget)
-            -- smooth ขยายวง
-            local part = getTargetPart(lockedTarget.Character)
-            if part then
-                local dist = (part.Position - Camera.CFrame.Position).Magnitude
-                local targetSize = CONFIG.CIRCLE_SIZE + math.min(dist / 50, 100)
-                currentSize = currentSize + (targetSize - currentSize) * 0.2
-            end
-        end
-    else
-        lockedTarget = nil
-    end
-
-    updateLockCircle(lockedTarget)
-end)
-
-print("[Aimlock] ✅ โหลดสำเร็จ! กดปุ่ม 🎯 เปิดเมนู")
-print("[Aimlock] วง FOV จะแสดงกลางจอเสมอ | วงล็อคจะขึ้นตอนกดปุ่ม")
+--============================================================
+-- MAIN LOOP
+--================================================
