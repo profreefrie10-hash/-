@@ -1,0 +1,597 @@
+-- ============================================
+-- AIMLOCK POV + UI MENU (Delta Mobile)
+-- ============================================
+
+local Players           = game:GetService("Players")
+local RunService        = game:GetService("RunService")
+local UserInputService  = game:GetService("UserInputService")
+local Workspace         = game:GetService("Workspace")
+local TweenService      = game:GetService("TweenService")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera      = Workspace.CurrentCamera
+local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
+
+-- ====== CONFIG ======
+local CONFIG = {
+    Enabled          = true,
+    FOV              = 90,
+    CIRCLE_SIZE      = 60,
+    CIRCLE_COLOR     = Color3.fromRGB(255, 60, 60),
+    CIRCLE_THICKNESS = 2,
+    CIRCLE_SEGMENTS  = 64,
+    SMOOTHNESS       = 0.25,
+    MAX_DISTANCE     = 500,
+    TEAM_CHECK       = true,
+    SCALE_SPEED      = 80,
+    SCALE_MODE       = "distance",
+}
+
+local LOCK_KEYS = {
+    [Enum.KeyCode.E] = true,
+    [Enum.KeyCode.Q] = true,
+    [Enum.UserInputType.MouseButton1] = true,
+}
+
+-- ============================================
+-- 🎨 สร้าง UI MENU
+-- ============================================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AimlockUI"
+screenGui.IgnoreGuiInset = true
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = PlayerGui
+
+-- ====== ปุ่มลอยเปิด/ปิด (ไอคอนเป้า) ======
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Name = "ToggleBtn"
+toggleBtn.Size = UDim2.fromOffset(50, 50)
+toggleBtn.Position = UDim2.new(0, 20, 0.5, -25)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+toggleBtn.BorderSizePixel = 0
+toggleBtn.Text = "🎯"
+toggleBtn.TextSize = 26
+toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleBtn.AutoButtonColor = false
+toggleBtn.Active = true
+toggleBtn.Draggable = true
+toggleBtn.Parent = screenGui
+
+local toggleCorner = Instance.new("UICorner")
+toggleCorner.CornerRadius = UDim.new(1, 0)
+toggleCorner.Parent = toggleBtn
+
+local toggleStroke = Instance.new("UIStroke")
+toggleStroke.Thickness = 2
+toggleStroke.Color = Color3.fromRGB(255, 60, 60)
+toggleStroke.Transparency = 0.3
+toggleStroke.Parent = toggleBtn
+
+local toggleGradient = Instance.new("UIGradient")
+toggleGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 60, 60)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(150, 0, 255)),
+})
+toggleGradient.Rotation = 45
+toggleGradient.Parent = toggleStroke
+
+-- ====== เมนูหลัก ======
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.fromOffset(280, 420)
+mainFrame.Position = UDim2.new(0, 85, 0.5, -210)
+mainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 26)
+mainFrame.BorderSizePixel = 0
+mainFrame.Visible = false
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 14)
+mainCorner.Parent = mainFrame
+
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Thickness = 1.5
+mainStroke.Color = Color3.fromRGB(255, 60, 60)
+mainStroke.Transparency = 0.4
+mainStroke.Parent = mainFrame
+
+local mainGradient = Instance.new("UIGradient")
+mainGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(60, 20, 80)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 20, 30)),
+})
+mainGradient.Rotation = 90
+mainGradient.Parent = mainFrame
+
+-- ====== Header ======
+local header = Instance.new("Frame")
+header.Name = "Header"
+header.Size = UDim2.new(1, 0, 0, 45)
+header.BackgroundTransparency = 1
+header.Parent = mainFrame
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -50, 1, 0)
+title.Position = UDim2.new(0, 15, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "🎯 AIMLOCK  POV"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.TextSize = 18
+title.Font = Enum.Font.GothamBold
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = header
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.fromOffset(30, 30)
+closeBtn.Position = UDim2.new(1, -40, 0, 8)
+closeBtn.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+closeBtn.BorderSizePixel = 0
+closeBtn.Text = "✕"
+closeBtn.TextSize = 16
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.Parent = header
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(1, 0)
+closeCorner.Parent = closeBtn
+
+-- ====== เส้นคั่น ======
+local divider = Instance.new("Frame")
+divider.Size = UDim2.new(1, -30, 0, 1)
+divider.Position = UDim2.new(0, 15, 0, 45)
+divider.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+divider.BackgroundTransparency = 0.6
+divider.BorderSizePixel = 0
+divider.Parent = mainFrame
+
+-- ====== Scroll Frame ======
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1, 0, 1, -55)
+scroll.Position = UDim2.new(0, 0, 0, 55)
+scroll.BackgroundTransparency = 1
+scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 4
+scroll.ScrollBarImageColor3 = Color3.fromRGB(255, 60, 60)
+scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scroll.Parent = mainFrame
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.Padding = UDim.new(0, 8)
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Parent = scroll
+
+local listPadding = Instance.new("UIPadding")
+listPadding.PaddingTop = UDim.new(0, 10)
+listPadding.PaddingLeft = UDim.new(0, 15)
+listPadding.PaddingRight = UDim.new(0, 15)
+listPadding.PaddingBottom = UDim.new(0, 10)
+listPadding.Parent = scroll
+
+-- ============================================
+-- 🛠️ ฟังก์ชันสร้าง UI Element
+-- ============================================
+
+-- สร้าง Toggle
+local function createToggle(name, default, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 32)
+    frame.BackgroundTransparency = 1
+    frame.Parent = scroll
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.7, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = name
+    label.TextColor3 = Color3.fromRGB(220, 220, 230)
+    label.TextSize = 14
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.fromOffset(45, 24)
+    btn.Position = UDim2.new(1, -45, 0.5, -12)
+    btn.BackgroundColor3 = default and Color3.fromRGB(0, 200, 100) or Color3.fromRGB(60, 60, 70)
+    btn.BorderSizePixel = 0
+    btn.Text = default and "ON" or "OFF"
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.TextSize = 12
+    btn.Font = Enum.Font.GothamBold
+    btn.Parent = frame
+
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 6)
+    c.Parent = btn
+
+    local state = default
+    btn.MouseButton1Click:Connect(function()
+        state = not state
+        btn.Text = state and "ON" or "OFF"
+        TweenService:Create(btn, TweenInfo.new(0.2), {
+            BackgroundColor3 = state and Color3.fromRGB(0, 200, 100) or Color3.fromRGB(60, 60, 70)
+        }):Play()
+        if callback then callback(state) end
+    end)
+end
+
+-- สร้าง Slider
+local function createSlider(name, min, max, default, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 50)
+    frame.BackgroundTransparency = 1
+    frame.Parent = scroll
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.7, 0, 0, 20)
+    label.BackgroundTransparency = 1
+    label.Text = name
+    label.TextColor3 = Color3.fromRGB(220, 220, 230)
+    label.TextSize = 14
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+
+    local valueLabel = Instance.new("TextLabel")
+    valueLabel.Size = UDim2.new(0.3, 0, 0, 20)
+    valueLabel.Position = UDim2.new(0.7, 0, 0, 0)
+    valueLabel.BackgroundTransparency = 1
+    valueLabel.Text = tostring(default)
+    valueLabel.TextColor3 = Color3.fromRGB(255, 60, 60)
+    valueLabel.TextSize = 14
+    valueLabel.Font = Enum.Font.GothamBold
+    valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    valueLabel.Parent = frame
+
+    local bar = Instance.new("Frame")
+    bar.Size = UDim2.new(1, 0, 0, 8)
+    bar.Position = UDim2.new(0, 0, 0, 30)
+    bar.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+    bar.BorderSizePixel = 0
+    bar.Parent = frame
+
+    local barCorner = Instance.new("UICorner")
+    barCorner.CornerRadius = UDim.new(1, 0)
+    barCorner.Parent = bar
+
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+    fill.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+    fill.BorderSizePixel = 0
+    fill.Parent = bar
+
+    local fillCorner = Instance.new("UICorner")
+    fillCorner.CornerRadius = UDim.new(1, 0)
+    fillCorner.Parent = fill
+
+    local knob = Instance.new("Frame")
+    knob.Size = UDim2.fromOffset(16, 16)
+    knob.Position = UDim2.new(fill.Size.X.Scale, -8, 0.5, -8)
+    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    knob.BorderSizePixel = 0
+    knob.Parent = bar
+
+    local knobCorner = Instance.new("UICorner")
+    knobCorner.CornerRadius = UDim.new(1, 0)
+    knobCorner.Parent = knob
+
+    local dragging = false
+    local function update(x)
+        local relX = math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+        local val = min + (max - min) * relX
+        fill.Size = UDim2.new(relX, 0, 1, 0)
+        knob.Position = UDim2.new(relX, -8, 0.5, -8)
+        valueLabel.Text = tostring(math.floor(val))
+        if callback then callback(val) end
+    end
+
+    bar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 
+           or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            update(input.Position.X)
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement 
+           or input.UserInputType == Enum.UserInputType.Touch) then
+            update(input.Position.X)
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 
+           or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+end
+
+-- สร้าง Section (หัวข้อ)
+local function createSection(text)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 24)
+    frame.BackgroundTransparency = 1
+    frame.Parent = scroll
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = "▸ " .. text
+    lbl.TextColor3 = Color3.fromRGB(255, 60, 60)
+    lbl.TextSize = 12
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = frame
+end
+
+-- ============================================
+-- 📋 เพิ่มเมนู
+-- ============================================
+
+createSection("MAIN")
+createToggle("เปิดใช้งาน Aimlock", CONFIG.Enabled, function(v) CONFIG.Enabled = v end)
+createToggle("เช็คทีม (ไม่ล็อคพวกเดียวกัน)", CONFIG.TEAM_CHECK, function(v) CONFIG.TEAM_CHECK = v end)
+
+createSection("AIM SETTINGS")
+createSlider("FOV (องศา)", 10, 180, CONFIG.FOV, function(v) CONFIG.FOV = v end)
+createSlider("ระยะไกลสุด", 100, 2000, CONFIG.MAX_DISTANCE, function(v) CONFIG.MAX_DISTANCE = v end)
+createSlider("ความนุ่มนวล", 1, 99, CONFIG.SMOOTHNESS * 100, function(v) CONFIG.SMOOTHNESS = v / 100 end)
+
+createSection("CIRCLE (วงล็อค)")
+createSlider("ขนาดวง", 10, 300, CONFIG.CIRCLE_SIZE, function(v) CONFIG.CIRCLE_SIZE = v end)
+createSlider("ความหนา", 1, 10, CONFIG.CIRCLE_THICKNESS, function(v) 
+    CONFIG.CIRCLE_THICKNESS = v
+    if circle then circle.Thickness = v end
+end)
+createSlider("ความเร็วขยาย", 0, 200, CONFIG.SCALE_SPEED, function(v) CONFIG.SCALE_SPEED = v end)
+
+-- ปุ่มเปลี่ยนสี
+local colorFrame = Instance.new("Frame")
+colorFrame.Size = UDim2.new(1, 0, 0, 32)
+colorFrame.BackgroundTransparency = 1
+colorFrame.Parent = scroll
+
+local colorLabel = Instance.new("TextLabel")
+colorLabel.Size = UDim2.new(0.6, 0, 1, 0)
+colorLabel.BackgroundTransparency = 1
+colorLabel.Text = "สีวงล็อค"
+colorLabel.TextColor3 = Color3.fromRGB(220, 220, 230)
+colorLabel.TextSize = 14
+colorLabel.Font = Enum.Font.Gotham
+colorLabel.TextXAlignment = Enum.TextXAlignment.Left
+colorLabel.Parent = colorFrame
+
+local COLORS = {
+    {name="แดง",   color=Color3.fromRGB(255, 60, 60)},
+    {name="เขียว", color=Color3.fromRGB(0, 255, 100)},
+    {name="ฟ้า",   color=Color3.fromRGB(60, 180, 255)},
+    {name="ม่วง",  color=Color3.fromRGB(180, 60, 255)},
+    {name="เหลือง",color=Color3.fromRGB(255, 220, 60)},
+}
+local colorIdx = 1
+
+local colorBtn = Instance.new("TextButton")
+colorBtn.Size = UDim2.fromOffset(90, 24)
+colorBtn.Position = UDim2.new(1, -90, 0.5, -12)
+colorBtn.BackgroundColor3 = COLORS[1].color
+colorBtn.BorderSizePixel = 0
+colorBtn.Text = COLORS[1].name
+colorBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+colorBtn.TextSize = 12
+colorBtn.Font = Enum.Font.GothamBold
+colorBtn.Parent = colorFrame
+
+local colorBtnCorner = Instance.new("UICorner")
+colorBtnCorner.CornerRadius = UDim.new(0, 6)
+colorBtnCorner.Parent = colorBtn
+
+colorBtn.MouseButton1Click:Connect(function()
+    colorIdx = colorIdx % #COLORS + 1
+    local c = COLORS[colorIdx]
+    colorBtn.Text = c.name
+    colorBtn.BackgroundColor3 = c.color
+    CONFIG.CIRCLE_COLOR = c.color
+    if circle then circle.Color = c.color end
+    if dot then dot.Color = c.color end
+end)
+
+-- ============================================
+-- 🖱️ Logic เปิด/ปิดเมนู
+-- ============================================
+local menuOpen = false
+local function setMenu(open)
+    menuOpen = open
+    if open then
+        mainFrame.Visible = true
+        mainFrame.Size = UDim2.fromOffset(0, 0)
+        TweenService:Create(mainFrame, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Size = UDim2.fromOffset(280, 420)
+        }):Play()
+    else
+        local tw = TweenService:Create(mainFrame, TweenInfo.new(0.2), {
+            Size = UDim2.fromOffset(0, 0)
+        })
+        tw:Play()
+        tw.Completed:Connect(function() 
+            if not menuOpen then mainFrame.Visible = false end 
+        end)
+    end
+end
+
+toggleBtn.MouseButton1Click:Connect(function()
+    setMenu(not menuOpen)
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
+    setMenu(false)
+end)
+
+-- ============================================
+-- 🎯 วงล็อค Drawing
+-- ============================================
+local Drawing = Drawing
+local circle, dot
+
+if Drawing then
+    circle = Drawing.new("Circle")
+    circle.Thickness   = CONFIG.CIRCLE_THICKNESS
+    circle.NumSides    = CONFIG.CIRCLE_SEGMENTS
+    circle.Radius      = CONFIG.CIRCLE_SIZE
+    circle.Filled      = false
+    circle.Color       = CONFIG.CIRCLE_COLOR
+    circle.Transparency= 0.9
+    circle.Visible     = false
+
+    dot = Drawing.new("Circle")
+    dot.Thickness = 1
+    dot.NumSides  = 24
+    dot.Radius    = 3
+    dot.Filled    = true
+    dot.Color     = CONFIG.CIRCLE_COLOR
+    dot.Transparency = 0.7
+    dot.Visible   = false
+end
+
+-- ============================================
+-- 🔍 Logic Aimlock
+-- ============================================
+local lockedTarget = nil
+local isLocking    = false
+local currentSize  = CONFIG.CIRCLE_SIZE
+
+local function isEnemy(plr)
+    if not plr or plr == LocalPlayer then return false end
+    if not plr.Character then return false end
+    if not plr.Character:FindFirstChild("HumanoidRootPart") then return false end
+    local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return false end
+    if CONFIG.TEAM_CHECK and plr.Team and LocalPlayer.Team
+       and plr.Team == LocalPlayer.Team then
+        return false
+    end
+    return true
+end
+
+local function findTarget()
+    local camPos = Camera.CFrame.Position
+    local viewport = Camera.ViewportSize
+    local center = Vector2.new(viewport.X / 2, viewport.Y / 2)
+
+    local best, bestScore = nil, math.huge
+    local fovRadius = (viewport.Y / 2) * math.tan(math.rad(CONFIG.FOV / 2))
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if not isEnemy(plr) then continue end
+        local hrp = plr.Character.HumanoidRootPart
+        local screenPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+        if onScreen and screenPos.Z > 0 then
+            local dist3D = (hrp.Position - camPos).Magnitude
+            if dist3D > CONFIG.MAX_DISTANCE then continue end
+            local screenDist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+            if screenDist <= fovRadius and screenDist < bestScore then
+                bestScore = screenDist
+                best = plr
+            end
+        end
+    end
+    return best
+end
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if LOCK_KEYS[input.KeyCode] or LOCK_KEYS[input.UserInputType] then
+        isLocking = true
+        lockedTarget = findTarget()
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if LOCK_KEYS[input.KeyCode] or LOCK_KEYS[input.UserInputType] then
+        local stillHeld = false
+        for key, _ in pairs(LOCK_KEYS) do
+            if typeof(key) == "EnumItem" and key.EnumType == Enum.KeyCode then
+                if UserInputService:IsKeyDown(key) then stillHeld = true break end
+            end
+        end
+        if not stillHeld then
+            isLocking = false
+            lockedTarget = nil
+        end
+    end
+end)
+
+local function updateCircle(target)
+    if not circle then return end
+    if not target then
+        circle.Visible = false
+        if dot then dot.Visible = false end
+        return
+    end
+    local hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        circle.Visible = false
+        if dot then dot.Visible = false end
+        return
+    end
+    local screenPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+    if not onScreen or screenPos.Z <= 0 then
+        circle.Visible = false
+        if dot then dot.Visible = false end
+        return
+    end
+
+    local targetSize = CONFIG.CIRCLE_SIZE
+    if CONFIG.SCALE_MODE == "distance" then
+        local dist = (hrp.Position - Camera.CFrame.Position).Magnitude
+        targetSize = CONFIG.CIRCLE_SIZE + (dist / CONFIG.MAX_DISTANCE) * CONFIG.SCALE_SPEED
+    elseif CONFIG.SCALE_MODE == "fov" then
+        targetSize = (Camera.ViewportSize.Y / 2) * math.tan(math.rad(CONFIG.FOV / 2)) * 0.15
+    end
+    currentSize = currentSize + (targetSize - currentSize) * 0.2
+
+    circle.Position = Vector2.new(screenPos.X, screenPos.Y)
+    circle.Radius   = currentSize
+    circle.Visible  = true
+    if dot then
+        dot.Position = Vector2.new(screenPos.X, screenPos.Y)
+        dot.Visible  = true
+    end
+end
+
+local function aimAt(target)
+    if not target then return end
+    local hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    local camCF = Camera.CFrame
+    local lookAt = CFrame.new(camCF.Position, hrp.Position)
+    Camera.CFrame = camCF:Lerp(lookAt, 1 - CONFIG.SMOOTHNESS)
+end
+
+RunService.RenderStepped:Connect(function()
+    if not CONFIG.Enabled then
+        if circle then circle.Visible = false end
+        if dot then dot.Visible = false end
+        return
+    end
+
+    if isLocking then
+        if not lockedTarget
+           or not lockedTarget.Character
+           or not isEnemy(lockedTarget) then
+            lockedTarget = findTarget()
+        end
+        if lockedTarget then aimAt(lockedTarget) end
+    else
+        lockedTarget = nil
+    end
+
+    updateCircle(lockedTarget)
+end)
+
+print("[Aimlock] ✅ โหลดสำเร็จ! กดปุ่ม 🎯 เพื่อเปิดเมนู")
