@@ -1,5 +1,5 @@
---// MAHI Full | ESP + Aimbot + UI + Mobile Patch
---// Delta Mobile Ready | Toggle: ปุ่ม MENU / RightShift
+--// MAHI Full | ESP + Aimbot + UI + Mobile + Minimize
+--// Delta Mobile Ready
 
 local Players          = game:GetService("Players")
 local RunService       = game:GetService("RunService")
@@ -24,10 +24,8 @@ local C = {
     TextSub = Color3.fromRGB(120, 140, 160),
     On      = Color3.fromRGB( 80, 200, 140),
     Off     = Color3.fromRGB(200, 210, 220),
-    Shadow  = Color3.fromRGB( 60,  80, 110),
     BotCol  = Color3.fromRGB(255,  80,  80),
     PlyCol  = Color3.fromRGB( 80, 255, 120),
-    TrcCol  = Color3.fromRGB(255, 255,   0),
 }
 
 local State = {
@@ -59,15 +57,18 @@ local function gradient(p, c1, c2, rot) return new("UIGradient", {Color=ColorSeq
 local function padding(p, a) return new("UIPadding", {PaddingTop=UDim.new(0,a),PaddingBottom=UDim.new(0,a),PaddingLeft=UDim.new(0,a),PaddingRight=UDim.new(0,a),Parent=p}) end
 local function tween(o, t, p) TweenService:Create(o, TweenInfo.new(t, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), p):Play() end
 
+local PARENT = (gethui and gethui()) or LocalPlayer:WaitForChild("PlayerGui")
+
 --============================================================
--- ROOT
+-- ROOT GUI
 --============================================================
 local gui = new("ScreenGui", {
     Name = "MAHI_UI",
     ResetOnSpawn = false,
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     IgnoreGuiInset = true,
-    Parent = (gethui and gethui()) or LocalPlayer:WaitForChild("PlayerGui"),
+    DisplayOrder = 10,
+    Parent = PARENT,
 })
 
 local main = new("Frame", {
@@ -110,13 +111,14 @@ stroke(avatar, C.Accent, 1.5, 0.2)
 new("TextLabel", {Size=UDim2.new(0,220,0,26), Position=UDim2.new(0,90,0,20), BackgroundTransparency=1, Font=Enum.Font.GothamBold, Text="MAHI", TextColor3=C.Text, TextSize=22, TextXAlignment=Enum.TextXAlignment.Left, Parent=header})
 new("TextLabel", {Size=UDim2.new(0,260,0,18), Position=UDim2.new(0,90,0,46), BackgroundTransparency=1, Font=Enum.Font.Gotham, Text="one tap is enough.", TextColor3=C.TextSub, TextSize=13, TextXAlignment=Enum.TextXAlignment.Left, Parent=header})
 
+-- ปุ่มย่อ
 local closeBtn = new("TextButton", {
     Size = UDim2.new(0, 28, 0, 28),
     Position = UDim2.new(1, -40, 0, 12),
     BackgroundColor3 = C.Bg,
     BackgroundTransparency = 0.3,
     Font = Enum.Font.GothamBold,
-    Text = "×",
+    Text = "—",
     TextColor3 = C.TextSub,
     TextSize = 18,
     BorderSizePixel = 0,
@@ -124,10 +126,9 @@ local closeBtn = new("TextButton", {
 })
 corner(closeBtn, 8)
 stroke(closeBtn, C.Stroke, 1, 0.4)
-closeBtn.MouseButton1Click:Connect(function() gui.Enabled = false end)
 
 --============================================================
--- SIDEBAR
+-- SIDEBAR + PAGES
 --============================================================
 local sidebar = new("Frame", {Size=UDim2.new(0,120,1,-100), Position=UDim2.new(0,14,0,94), BackgroundTransparency=1, Parent=main})
 
@@ -307,11 +308,9 @@ makeToggle(a, "Visible Check", "Aimbot_Visible")
 selectTab("ESP")
 
 --============================================================
--- ESP LOGIC
+-- CLASSIFY
 --============================================================
-local function getHitboxFolder(m)
-    return m:FindFirstChild("Hitbox_Bots") or m:FindFirstChild("Hitbox")
-end
+local function getHitboxFolder(m) return m:FindFirstChild("Hitbox_Bots") or m:FindFirstChild("Hitbox") end
 local function isBot(m) return getHitboxFolder(m) ~= nil end
 local function isPlayer(m) return Players:GetPlayerFromCharacter(m) ~= nil end
 local function classify(m)
@@ -329,6 +328,9 @@ local function getHealth(m)
     return 100, 100
 end
 
+--============================================================
+-- ESP LOGIC
+--============================================================
 local espObjects = {}
 
 local function removeESP(m)
@@ -351,9 +353,7 @@ local function createESP(m)
     espObjects[m] = d
 end
 
-local function setVis(d, v)
-    for _, o in pairs(d) do o.Visible = v end
-end
+local function setVis(d, v) for _, o in pairs(d) do o.Visible = v end end
 
 local function updateESP()
     local camPos = Camera.CFrame.Position
@@ -468,4 +468,4 @@ fovCircle.Transparency = 0.7
 
 --============================================================
 -- MAIN LOOP
---================================================
+--======================================
